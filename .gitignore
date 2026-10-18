@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build output (electron-vite, electron-builder)
+out/
+dist/
+release/
+*.blockmap
+
+# Caches
+.vite/
+.cache/
+*.tsbuildinfo
+
+# Environment (keep the template)
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Editor / IDE
+.vscode/
+.idea/
+*.suo
+*.sw?
+
+# OS files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Claude Code local settings
+.claude/
+
+# Leftover nested folder from the old layout (safe to delete)
+/desktop/

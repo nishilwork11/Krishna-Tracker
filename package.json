@@ -1,0 +1,66 @@
+{
+  "name": "hrms-desktop-tracker",
+  "productName": "HRMS Desktop Tracker",
+  "version": "0.1.0",
+  "description": "Desktop time & activity tracker for the HRMS",
+  "main": "out/main/index.js",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "dev:fast": "node scripts/dev-fast.mjs",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test:e2e": "electron-vite build && node scripts/run-e2e.mjs",
+    "test:accuracy": "electron-vite build && node scripts/run-e2e.mjs accuracy gap shots-fast",
+    "test:shots-real": "electron-vite build && node scripts/run-e2e.mjs shots-real",
+    "mock-server": "node scripts/mock-server.mjs",
+    "dist": "npm run typecheck && electron-vite build && electron-builder --win"
+  },
+  "dependencies": {
+    "uiohook-napi": "^1.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7"
+  },
+  "build": {
+    "appId": "com.hrms.desktoptracker",
+    "productName": "HRMS Desktop Tracker",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/uiohook-napi/**"
+    ],
+    "protocols": [
+      {
+        "name": "HRMS Desktop Tracker",
+        "schemes": [
+          "krishnatracker"
+        ]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "npmRebuild": false
+  }
+}

@@ -1,0 +1,30 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Check tag matches package.json version
+        shell: bash
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          [ "${GITHUB_REF_NAME}" = "v${v}" ] || { echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${v}"; exit 1; }
+      - run: npm ci
+      - run: npm run dist
+        env:
+          # Optional code signing; leave the secrets unset to build an unsigned installer.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/HRMS-Desktop-Tracker-Setup.exe
+          generate_release_notes: true

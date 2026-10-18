@@ -3,6 +3,13 @@
   "productName": "HRMS Desktop Tracker",
   "version": "0.1.0",
   "description": "Desktop time & activity tracker for the HRMS",
+  "author": "Krishna Infotechs",
+  "homepage": "https://github.com/nishilwork11/Krishna-Tracker#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nishilwork11/Krishna-Tracker.git"
+  },
+  "license": "UNLICENSED",
   "main": "out/main/index.js",
   "private": true,
   "scripts": {
@@ -55,12 +62,18 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "artifactName": "HRMS-Desktop-Tracker-Setup.exe"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "HRMS-Desktop-Tracker-Setup.exe"
     },
-    "npmRebuild": false
+    "npmRebuild": false,
+    "publish": null
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

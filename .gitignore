@@ -15,6 +15,7 @@ release/
 # Environment (keep the template)
 .env
 .env.*
+!.env.production
 !.env.example
 
 # Logs

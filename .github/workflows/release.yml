@@ -26,5 +26,10 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/HRMS-Desktop-Tracker-Setup.exe
+          # The small web-installer stub plus the .nsis.7z application package it
+          # downloads during install. Both must live in the same release: the stub
+          # has the package's versioned URL baked in.
+          files: |
+            dist/HRMS-Desktop-Tracker-Setup.exe
+            dist/*.nsis.7z
           generate_release_notes: true

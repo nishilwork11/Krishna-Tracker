@@ -1,7 +1,7 @@
 {
   "name": "hrms-desktop-tracker",
   "productName": "HRMS Desktop Tracker",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Desktop time & activity tracker for the HRMS",
   "author": "Krishna Infotechs",
   "homepage": "https://github.com/nishilwork11/Krishna-Tracker#readme",
@@ -22,7 +22,7 @@
     "test:accuracy": "electron-vite build && node scripts/run-e2e.mjs accuracy gap shots-fast",
     "test:shots-real": "electron-vite build && node scripts/run-e2e.mjs shots-real",
     "mock-server": "node scripts/mock-server.mjs",
-    "dist": "npm run typecheck && electron-vite build && electron-builder --win"
+    "dist": "npm run typecheck && electron-vite build && electron-builder --win --publish never"
   },
   "dependencies": {
     "uiohook-napi": "^1.5.5"
@@ -63,17 +63,21 @@
       }
     ],
     "win": {
-      "target": "nsis",
+      "target": "nsis-web",
       "icon": "build/icon.ico",
       "artifactName": "HRMS-Desktop-Tracker-Setup.exe"
     },
-    "nsis": {
+    "nsisWeb": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "artifactName": "HRMS-Desktop-Tracker-Setup.exe"
     },
     "npmRebuild": false,
-    "publish": null
+    "publish": {
+      "provider": "github",
+      "owner": "nishilwork11",
+      "repo": "Krishna-Tracker"
+    }
   },
   "engines": {
     "node": ">=22"

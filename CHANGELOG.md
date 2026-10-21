@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2
+Web installer. The download is now a small (~a few MB) `nsis-web` stub that
+launches instantly and streams the application package (`.nsis.7z`) from the
+same GitHub release with a progress bar, instead of a single ~98 MB download.
+The HRMS "Download" link is unchanged — it still serves
+`HRMS-Desktop-Tracker-Setup.exe` (now the stub). Requires an internet
+connection during install (the app needs one to reach the HRMS anyway).
+
 ## 0.1.1
 Smaller Windows installer, same app. Builds now use maximum NSIS (LZMA)
 compression, and an `afterPack` step trims files the Windows x64 build never

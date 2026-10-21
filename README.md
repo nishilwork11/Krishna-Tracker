@@ -44,7 +44,7 @@ To get screenshots every ~20 s instead of every 8–12 min, use `npm run dev:fas
 | `npm run dev` / `npm run dev:fast` | Run the app in development |
 | `npm run typecheck` | TypeScript check for the main process, preload and renderer |
 | `npm run test:e2e` | Build, then run the end-to-end suite against a private mock server (see below) |
-| `npm run dist` | Typecheck, build, and produce `dist/HRMS-Desktop-Tracker-Setup.exe` |
+| `npm run dist` | Typecheck, build, and produce the web installer: the `dist/HRMS-Desktop-Tracker-Setup.exe` stub plus the `dist/*.nsis.7z` package it downloads during install |
 
 No Visual Studio/C++ toolchain is needed. Local storage uses Electron's built-in `node:sqlite`, and the input hook (`uiohook-napi`) ships prebuilt N-API binaries.
 
@@ -111,7 +111,7 @@ Data flows one way: `core` writes to the local outbox, `sync-engine` uploads it,
 1. **Deploy the backend.** In the `krishna-hrms` repo, apply the `20261016000000_desktop_tracker` migration to the production database (`npx prisma migrate deploy` if it uses Prisma), then deploy to Vercel (push to the connected branch, or `vercel --prod`). Confirm the `/api/tracker/**` routes exist: for example `https://krishna-hrms.vercel.app/api/tracker/me` should answer `401`, not `404`.
 2. **Enable monitoring** in the HRMS under Settings → Work pattern, and set the screenshots-per-hour value.
 3. **Server URL.** `.env.production` (committed; it holds only the public URL) sets `MAIN_VITE_HRMS_API_URL=https://krishna-hrms.vercel.app`. It is baked in at build time, so edit it and rebuild to point at another deployment.
-4. **Release.** Bump `version` in `package.json` (and `CHANGELOG.md`), commit, then `git tag vX.Y.Z && git push origin vX.Y.Z`. The Release workflow builds `HRMS-Desktop-Tracker-Setup.exe` and attaches it to a GitHub Release. To build locally instead: `npm ci && npm run dist` (output in `dist/`). Optional signing: add repository secrets `CSC_LINK` and `CSC_KEY_PASSWORD`.
+4. **Release.** Bump `version` in `package.json` (and `CHANGELOG.md`), commit, then `git tag vX.Y.Z && git push origin vX.Y.Z`. The Release workflow builds the web installer and attaches **both** the `HRMS-Desktop-Tracker-Setup.exe` stub and the `*.nsis.7z` package to a GitHub Release — both are required, since the stub downloads the package from that release by its versioned URL (set via the `build.publish` github config). To build locally instead: `npm ci && npm run dist` (output in `dist/`). Optional signing: add repository secrets `CSC_LINK` and `CSC_KEY_PASSWORD`.
 5. **Distribute.** In the HRMS set **Settings → Work pattern → Agent download URL** to `https://github.com/nishilwork11/Krishna-Tracker/releases/latest/download/HRMS-Desktop-Tracker-Setup.exe` (stable across versions; the repo must be public for employees to download it). Employees then press **Start timer**, which opens the app via `krishnatracker://` and signs it in with a one-time code.
 6. **Verify end to end:** start a timer, wait for a screenshot, then check the Monitoring page in the HRMS and `%APPDATA%\HRMS Desktop Tracker\logs\main.log`.
 

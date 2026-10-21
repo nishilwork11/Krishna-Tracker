@@ -28,8 +28,10 @@ jobs:
         with:
           # The small web-installer stub plus the .nsis.7z application package it
           # downloads during install. Both must live in the same release: the stub
-          # has the package's versioned URL baked in.
+          # has the package's versioned URL baked in. electron-builder writes
+          # nsis-web output to the dist/nsis-web/ subdirectory.
           files: |
-            dist/HRMS-Desktop-Tracker-Setup.exe
-            dist/*.nsis.7z
+            dist/nsis-web/HRMS-Desktop-Tracker-Setup.exe
+            dist/nsis-web/*.nsis.7z
+          fail_on_unmatched_files: true
           generate_release_notes: true

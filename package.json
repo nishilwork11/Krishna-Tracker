@@ -1,7 +1,7 @@
 {
   "name": "hrms-desktop-tracker",
   "productName": "HRMS Desktop Tracker",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Desktop time & activity tracker for the HRMS",
   "author": "Krishna Infotechs",
   "homepage": "https://github.com/nishilwork11/Krishna-Tracker#readme",
@@ -43,6 +43,8 @@
   "build": {
     "appId": "com.hrms.desktoptracker",
     "productName": "HRMS Desktop Tracker",
+    "compression": "maximum",
+    "afterPack": "./build/afterPack.cjs",
     "directories": {
       "output": "dist"
     },

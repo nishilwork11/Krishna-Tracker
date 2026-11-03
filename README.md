@@ -93,9 +93,12 @@ Data flows one way: `core` writes to the local outbox, `sync-engine` uploads it,
 | Sleep | Gaps under 30 min are logged `UNTRACKED`. Longer gaps end the session `INTERRUPTED`. |
 | Clock changes | A backward jump closes the current minute and continues, and the timer stays continuous. A forward jump is treated like sleep. |
 | Storage cap | Default 500 MB pending. At 80% the employee is warned and an admin alert is queued; at 100% screenshots pause. |
+| Idle check | After 5 minutes with no keyboard or mouse input anywhere on the computer, a small always-on-top card asks "Are you still working?" (it does not depend on Windows notification settings). Click it, or just start typing, and the timer carries on. With no answer for 3 minutes the timer pauses from when the inactivity began, and resumes on the first input. The timer is **never** paused unless the card was really on screen: if it cannot be shown, nothing happens. A locked screen pauses without a card. Settings (`config.json`): `idleDetection` (`false` turns it off), `idlePromptMinutes`, `idleResponseMinutes`. |
 | Robustness | Schema migrations. A corrupt database is set aside and recreated. Config is validated and clamped. Logs go to `%APPDATA%\HRMS Desktop Tracker\logs\main.log` (rotated at 5 MB). |
 
 ## Tests
+
+`npm run test:unit` checks the idle-detection logic and the activity batching rule with a fake clock. It needs no Electron, server or database, and runs in CI.
 
 `npm run test:e2e` starts a private mock server on port 4100 and runs each scenario against a temporary profile, so your real data is untouched:
 

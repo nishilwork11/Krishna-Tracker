@@ -1,4 +1,4 @@
-import { app, Notification } from 'electron'
+import { app, Notification, powerMonitor } from 'electron'
 import { randomUUID } from 'crypto'
 import type { ActivityLogPayload, AlertType, HrmsClock, LoginResponse, MeResponse, TrackerProject } from '@shared/api-contract'
 import type { ActionResult, ActivityView, TrackerDisplayStatus, TrackerState } from '@shared/ipc'
@@ -8,6 +8,8 @@ import { ApiClient, AuthError, HttpError, NetworkError, validateServerUrl } from
 import { applyServerSchedule, getConfig, saveConfig } from '../platform/config'
 import { createLogger } from '../platform/logger'
 import { clearAuth, loadAuth, saveAuth, StoredAuth } from '../platform/secure-storage'
+import { showIdlePrompt } from '../app/idle-prompt'
+import { IdleWatcher } from './idle-watcher'
 import { inputMonitor } from './input-monitor'
 import { cleanupOrphanFiles, readPendingImage, ScreenshotService, StorageLevel } from './screenshot-service'
 import { SessionTracker } from './session-tracker'
@@ -30,6 +32,8 @@ const log = createLogger('service')
 
 /** Minimum time between two storage alerts of the same type. */
 const STORAGE_ALERT_COOLDOWN_MS = 6 * 60 * 60_000
+/** How long the Start picker's project list is reused before asking the server again. */
+const PROJECTS_REFRESH_MS = 15 * 60_000
 
 export class TrackerService {
   private auth: StoredAuth | null = null
@@ -51,11 +55,15 @@ export class TrackerService {
   private projects: TrackerProject[] = []
 
   private permissionTimer: NodeJS.Timeout | null = null
+  /** When the project list was last fetched; it only matters at Start, so it is not re-fetched every check. */
+  private projectsFetchedAt = 0
+  private lastPermissionCheckAt = 0
   private listeners: Array<(s: TrackerState) => void> = []
 
   readonly session: SessionTracker
   readonly screenshots: ScreenshotService
   readonly sync: SyncEngine
+  private readonly idle: IdleWatcher
 
   constructor() {
     this.session = new SessionTracker({
@@ -84,13 +92,38 @@ export class TrackerService {
       client: () => (this.authExpired ? null : this.client),
       employeeId: () => this.auth?.user.id ?? null,
       onAuthExpired: () => this.handleAuthExpired(),
-      onChange: () => this.emit()
+      onChange: () => this.emit(),
+      isTracking: () => this.session.current?.status === 'ACTIVE',
+      activityHoldMs: () => {
+        // Must exceed how far the idle check backdates a pause (prompt + response + a few polls).
+        const c = getConfig()
+        return c.idleDetection ? (c.idlePromptMinutes + c.idleResponseMinutes + 1) * 60_000 : 0
+      }
+    })
+
+    this.idle = new IdleWatcher({
+      isRunning: () => this.session.current?.status === 'ACTIVE',
+      pause: (at) => {
+        this.session.pause(at)
+        this.sync.trigger()
+      },
+      resume: () => this.resumeAfterIdle(),
+      isScreenLocked: () => this.screenLocked,
+      notice: (message) => this.showNotice(message, false),
+      idleSeconds: () => powerMonitor.getSystemIdleTime(),
+      settings: () => {
+        const c = getConfig()
+        return { enabled: c.idleDetection, promptMinutes: c.idlePromptMinutes, responseMinutes: c.idleResponseMinutes }
+      },
+      showPrompt: showIdlePrompt,
+      log
     })
   }
 
   /** Startup sequence. Order matters: input hook before crash recovery (recovery flushes a bucket). */
   init(): void {
     this.inputPermissionOk = inputMonitor.start()
+    this.idle.start()
     cleanupOrphanFiles()
 
     if (this.session.recoverAfterRestart()) {
@@ -280,6 +313,7 @@ export class TrackerService {
     this.client = null
     this.authExpired = false
     this.projects = []
+    this.projectsFetchedAt = 0
     this.hrmsClock = null
     this.emit()
   }
@@ -300,9 +334,14 @@ export class TrackerService {
 
   // ================================================================== server-side permission
 
+  /** Ticks every minute (locally, free) and calls the server only when a check is due: often with a timer open, rarely without. */
   private startPermissionChecks(): void {
     this.stopPermissionChecks()
-    this.permissionTimer = setInterval(() => void this.checkPermission(), getConfig().permissionCheckMinutes * 60_000)
+    this.permissionTimer = setInterval(() => {
+      const { permissionCheckMinutes, permissionCheckIdleMinutes } = getConfig()
+      const every = this.session.current ? permissionCheckMinutes : permissionCheckIdleMinutes
+      if (Date.now() - this.lastPermissionCheckAt >= every * 60_000 - 5_000) void this.checkPermission()
+    }, 60_000)
   }
 
   private stopPermissionChecks(): void {
@@ -314,14 +353,15 @@ export class TrackerService {
    * Asks the backend whether this employee may be tracked now (e.g. checked in). Also the
    * "tracker connected" heartbeat the HRMS dashboard uses. Offline keeps the last answer.
    */
-  async checkPermission(): Promise<void> {
+  async checkPermission(forceProjects = false): Promise<void> {
     const client = this.client
     if (!client || this.authExpired) return
+    this.lastPermissionCheckAt = Date.now()
     try {
       const me = await client.me()
       // A new cadence from the HRMS applies from the next capture on.
       if (applyServerSchedule(me.screenshotsPerHour) && this.session.current?.status === 'ACTIVE') this.screenshots.start()
-      await this.refreshProjects(client)
+      await this.refreshProjects(client, forceProjects)
       this.trackingAllowed = me.trackingAllowed
       this.trackingBlockedReason = me.trackingAllowed ? null : (me.reason ?? 'Tracking is not permitted right now.')
       if (pendingStats(this.auth?.user.id ?? null).count === 0) this.sync.markContact()
@@ -336,9 +376,12 @@ export class TrackerService {
   }
 
   /** Keeps the last list on failure: an older list beats an empty picker. */
-  private async refreshProjects(client: ApiClient): Promise<void> {
+  private async refreshProjects(client: ApiClient, force: boolean): Promise<void> {
+    // The list is only used by the picker at Start, so skip it while a timer runs and otherwise refresh it rarely.
+    if (!force && (this.session.current || Date.now() - this.projectsFetchedAt < PROJECTS_REFRESH_MS)) return
     try {
       this.projects = (await client.getProjects()).projects
+      this.projectsFetchedAt = Date.now()
     } catch (e) {
       if (e instanceof AuthError) throw e
       log.warn('Could not load projects', e)
@@ -351,7 +394,7 @@ export class TrackerService {
     if (!this.auth || this.authExpired) return { ok: false, error: 'Please sign in first.' }
     if (this.session.current) return { ok: true }
     // Re-check with the server if reachable. Offline starts are allowed and synced later.
-    await this.checkPermission()
+    await this.checkPermission(true)
     if (!this.trackingAllowed) {
       return { ok: false, error: this.trackingBlockedReason ?? 'Tracking is not permitted right now.' }
     }
@@ -378,6 +421,21 @@ export class TrackerService {
     }
     this.session.resume()
     this.pausedByHrms = false
+  }
+
+  /**
+   * The employee is back after an idle pause. If the HRMS is on a break meanwhile, the timer
+   * stays paused and follows the HRMS back (see followHrmsClock) instead of resuming early.
+   */
+  private resumeAfterIdle(): void {
+    if (this.session.current?.status !== 'PAUSED') return // they resumed it themselves
+    if (this.hrmsClock === 'break') {
+      this.pausedByHrms = true
+      return
+    }
+    this.session.resume()
+    this.pausedByHrms = false
+    this.showNotice('Welcome back. The timer is running again.', true)
   }
 
   /**
@@ -568,6 +626,7 @@ export class TrackerService {
    * bounded final upload, and stops all timers. Safe to call more than once.
    */
   async shutdown(sessionStatus: 'COMPLETED' | 'INTERRUPTED', flush: boolean): Promise<void> {
+    this.idle.stop()
     this.session.stop(sessionStatus)
     this.screenshots.stop()
     this.stopPermissionChecks()

@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import type { ActivityLogPayload, ActivityStatus, SessionPayload, SessionStatus } from '@shared/api-contract'
 import { KvKey, kvDelete, kvGet, kvSet } from '../data/kv-store'
-import { enqueue, upsertSession } from '../data/outbox'
+import { enqueue, retractActivity, upsertSession } from '../data/outbox'
 import { createLogger } from '../platform/logger'
 import { inputMonitor } from './input-monitor'
 
@@ -146,15 +146,18 @@ export class SessionTracker {
     this.hooks.onChange()
   }
 
-  pause(): void {
+  /** Pauses the timer. `at` backdates the pause (idle detection); it never precedes the session or follows now. */
+  pause(at = Date.now()): void {
     const s = this.s
     if (!s || s.status !== 'ACTIVE') return
-    const now = Date.now()
+    const pausedAt = Math.min(Date.now(), Math.max(at, s.startedAt))
     this.absorbInput()
-    if (s.bucket) this.flushBucket(s.bucket, now)
+    if (s.bucket) this.flushBucket(s.bucket, pausedAt)
+    // Minutes already written after a backdated pause would still count as tracked on the server.
+    if (pausedAt < Date.now() - MIN_INTERVAL_MS) retractActivity(s.id, pausedAt)
     s.bucket = null
     s.status = 'PAUSED'
-    s.pauseStartedAt = now
+    s.pauseStartedAt = pausedAt
     this.persist(true)
     this.queueSession('PAUSED')
     this.hooks.onRunningChanged(false)

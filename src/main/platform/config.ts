@@ -33,7 +33,17 @@ export interface AppConfig {
   storageWarnRatio: number
   syncIntervalSeconds: number
   permissionCheckMinutes: number
+  /** The same check while no timer is open: nothing to follow, so it only refreshes the HRMS's "connected" light (stale after 15 min). */
+  permissionCheckIdleMinutes: number
   activityBatchSize: number
+  /** While the timer runs, activity is sent in batches this many minutes apart (0 = every minute). */
+  activityUploadMinutes: number
+  /** Ask "Are you still working?" after a quiet stretch, and pause the timer if nobody answers. */
+  idleDetection: boolean
+  /** Minutes without any input before "Are you still working?" is asked. */
+  idlePromptMinutes: number
+  /** Minutes to answer before the timer pauses from the start of the idleness. */
+  idleResponseMinutes: number
 }
 
 const log = createLogger('config')
@@ -42,18 +52,24 @@ const DEFAULTS: AppConfig = {
   apiBaseUrl: import.meta.env.MAIN_VITE_HRMS_API_URL || 'http://localhost:4000',
   screenshotMinMinutes: 8,
   screenshotMaxMinutes: 12,
-  screenshotMaxWidth: 1600,
-  screenshotJpegQuality: 60,
+  screenshotMaxWidth: 1280,
+  screenshotJpegQuality: 50,
   storageLimitMb: 500,
   storageWarnRatio: 0.8,
   syncIntervalSeconds: 30,
-  // Also how quickly a check-out or break in the HRMS reaches the timer.
-  permissionCheckMinutes: 1,
-  activityBatchSize: 200
+  // Also how quickly a check-out or break in the HRMS reaches the timer. Each check is a server call.
+  permissionCheckMinutes: 2,
+  permissionCheckIdleMinutes: 5,
+  activityBatchSize: 200,
+  activityUploadMinutes: 5,
+  idleDetection: true,
+  idlePromptMinutes: 5,
+  // Long enough to finish a thought or a phone call; the card stays on screen all that time.
+  idleResponseMinutes: 3
 }
 
 /** [min, max] allowed for each numeric setting. */
-const LIMITS: Record<Exclude<keyof AppConfig, 'apiBaseUrl'>, [number, number]> = {
+const LIMITS: Record<Exclude<keyof AppConfig, 'apiBaseUrl' | 'idleDetection'>, [number, number]> = {
   screenshotMinMinutes: [0.1, 120],
   screenshotMaxMinutes: [0.1, 240],
   screenshotMaxWidth: [640, 3840],
@@ -62,7 +78,11 @@ const LIMITS: Record<Exclude<keyof AppConfig, 'apiBaseUrl'>, [number, number]> =
   storageWarnRatio: [0.5, 0.95],
   syncIntervalSeconds: [5, 600],
   permissionCheckMinutes: [1, 60],
-  activityBatchSize: [10, 500]
+  permissionCheckIdleMinutes: [1, 10],
+  activityBatchSize: [10, 500],
+  activityUploadMinutes: [0, 30],
+  idlePromptMinutes: [0.1, 120],
+  idleResponseMinutes: [0.1, 30]
 }
 
 /** Values read from config.json (only known keys with the right type survive). */
@@ -78,6 +98,7 @@ function readFileConfig(): Partial<AppConfig> {
     const raw = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
     const out: Partial<AppConfig> = {}
     if (typeof raw.apiBaseUrl === 'string') out.apiBaseUrl = raw.apiBaseUrl
+    if (typeof raw.idleDetection === 'boolean') out.idleDetection = raw.idleDetection
     for (const key of Object.keys(LIMITS) as Array<keyof typeof LIMITS>) {
       if (typeof raw[key] === 'number' && Number.isFinite(raw[key])) out[key] = raw[key] as number
     }
@@ -99,6 +120,14 @@ function devOverrides(): Partial<AppConfig> {
     out.screenshotMinMinutes = (seconds * 0.75) / 60
     out.screenshotMaxMinutes = (seconds * 1.25) / 60
     out.syncIntervalSeconds = 5
+  }
+  // Tests expect activity to reach the server promptly; production batches it (see activityUploadMinutes).
+  out.activityUploadMinutes = Number(process.env.TRACKER_ACTIVITY_UPLOAD_MINUTES) || 0
+  // TRACKER_IDLE_SECONDS=N → ask after N s of no input, then wait N s for an answer.
+  const idleSeconds = Number(process.env.TRACKER_IDLE_SECONDS) || 0
+  if (idleSeconds > 0) {
+    out.idlePromptMinutes = idleSeconds / 60
+    out.idleResponseMinutes = idleSeconds / 60
   }
   return out
 }

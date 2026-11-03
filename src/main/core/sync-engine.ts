@@ -4,6 +4,7 @@ import { dueItems, markFailed, OutboxRow, remove, resetBackoff, restoreAttempts 
 import { ApiClient, AuthError, HttpError, NetworkError } from '../platform/api-client'
 import { getConfig } from '../platform/config'
 import { createLogger } from '../platform/logger'
+import { activityUploadDue, heldForIdle } from './batching'
 import { deletePendingFile, previewOf, readPendingImage } from './screenshot-service'
 
 /**
@@ -33,6 +34,10 @@ export interface SyncHooks {
   employeeId(): string | null
   onAuthExpired(): void
   onChange(): void
+  /** True while the timer runs, i.e. more activity is on its way. */
+  isTracking(): boolean
+  /** How long recent no-input minutes stay queued so an idle pause can still take them back (0 = never). */
+  activityHoldMs(): number
 }
 
 export class SyncEngine {
@@ -44,6 +49,8 @@ export class SyncEngine {
   private debounce: NodeJS.Timeout | null = null
   private inFlight: Promise<void> | null = null
   private rerunRequested = false
+  /** The next cycle sends all queued activity now instead of waiting to batch it. */
+  private forceActivity = false
   private running = false
   /** First error message seen in the current cycle (surfaced to the UI at cycle end). */
   private cycleError: string | null = null
@@ -86,6 +93,7 @@ export class SyncEngine {
   async syncNow(): Promise<void> {
     const emp = this.hooks.employeeId()
     if (emp) resetBackoff(emp)
+    this.forceActivity = true
     if (this.inFlight) await this.inFlight
     await this.run()
   }
@@ -135,12 +143,14 @@ export class SyncEngine {
     const emp = this.hooks.employeeId()
     if (!client || !emp) return
 
+    const forced = this.forceActivity
+    this.forceActivity = false
     this.syncing = true
     this.cycleError = null
     this.hooks.onChange()
     try {
       await this.uploadSessions(client, emp)
-      await this.uploadActivity(client, emp)
+      await this.uploadActivity(client, emp, forced)
       await this.uploadScreenshots(client, emp)
       await this.uploadAlerts(client, emp)
       this.lastError = this.cycleError
@@ -198,11 +208,20 @@ export class SyncEngine {
     }
   }
 
-  private async uploadActivity(client: ApiClient, emp: string): Promise<void> {
-    const batchSize = getConfig().activityBatchSize
+  private async uploadActivity(client: ApiClient, emp: string, forced: boolean): Promise<void> {
+    const { activityBatchSize: batchSize, activityUploadMinutes } = getConfig()
+    const tracking = this.hooks.isTracking()
+    const holdMs = this.hooks.activityHoldMs()
+    const sendable = (rows: OutboxRow[]): OutboxRow[] => {
+      const now = Date.now()
+      return rows.filter((r) => !heldForIdle(JSON.parse(r.payload) as ActivityLogPayload, now, holdMs, tracking))
+    }
+    const oldest = sendable(dueItems(emp, 'activity', batchSize))[0]?.created_at ?? null
+    if (!activityUploadDue(oldest, Date.now(), activityUploadMinutes * 60_000, tracking, forced)) return
     // Bounded loop: at most 50 batches per cycle so a huge backlog can't monopolise it.
     for (let i = 0; i < 50; i++) {
-      const rows = dueItems(emp, 'activity', batchSize)
+      const fetched = dueItems(emp, 'activity', batchSize)
+      const rows = sendable(fetched)
       if (rows.length === 0) return
       const ok = await this.uploadActivityRows(client, rows)
       if (!ok && this.lastFailure?.retryable) return // server-side trouble; try again next cycle
@@ -213,7 +232,8 @@ export class SyncEngine {
         for (const row of rows) await this.uploadActivityRows(client, [row])
       }
       this.hooks.onChange()
-      if (rows.length < batchSize) return
+      // Fewer than asked for, or some held back: nothing more to send this cycle.
+      if (fetched.length < batchSize || rows.length < fetched.length) return
     }
   }
 

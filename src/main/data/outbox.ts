@@ -92,6 +92,33 @@ export function dueItems(employeeId: string, kind: OutboxKind, limit: number): O
     .all(employeeId, kind, Date.now(), limit) as unknown as OutboxRow[]
 }
 
+/**
+ * Takes back queued activity of a session from `from` on: rows wholly after it are deleted,
+ * a row it cuts through is shortened to end there. Used when a pause is backdated (idle
+ * detection) so the idle stretch does not reach the server as tracked time. Only rows still
+ * queued can be taken back; the uploader holds recent idle minutes for exactly this reason.
+ */
+export function retractActivity(sessionId: string, from: number): number {
+  const db = getDb()
+  const rows = db
+    .prepare(`SELECT id, payload FROM outbox WHERE kind = 'activity' AND session_id = ?`)
+    .all(sessionId) as unknown as Array<{ id: string; payload: string }>
+  let changed = 0
+  for (const row of rows) {
+    const p = JSON.parse(row.payload) as { intervalStart: string; intervalEnd: string }
+    const start = Date.parse(p.intervalStart)
+    if (Date.parse(p.intervalEnd) <= from) continue
+    if (from - start < 1_000) {
+      db.prepare('DELETE FROM outbox WHERE id = ?').run(row.id)
+    } else {
+      p.intervalEnd = new Date(from).toISOString()
+      db.prepare('UPDATE outbox SET payload = ? WHERE id = ?').run(JSON.stringify(p), row.id)
+    }
+    changed++
+  }
+  return changed
+}
+
 export function getItem(id: string): OutboxRow | null {
   return (getDb().prepare('SELECT * FROM outbox WHERE id = ?').get(id) as unknown as OutboxRow | undefined) ?? null
 }

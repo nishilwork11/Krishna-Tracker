@@ -1,7 +1,7 @@
 {
   "name": "hrms-desktop-tracker",
   "productName": "HRMS Desktop Tracker",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Desktop time & activity tracker for the HRMS",
   "author": "Krishna Infotechs",
   "homepage": "https://github.com/nishilwork11/Krishna-Tracker#readme",
@@ -18,6 +18,8 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test:idle": "node --experimental-transform-types --no-warnings scripts/test-idle.mjs",
+    "test:unit": "npm run test:idle && node --experimental-transform-types --no-warnings scripts/test-batching.mjs",
     "test:e2e": "electron-vite build && node scripts/run-e2e.mjs",
     "test:accuracy": "electron-vite build && node scripts/run-e2e.mjs accuracy gap shots-fast",
     "test:shots-real": "electron-vite build && node scripts/run-e2e.mjs shots-real",
